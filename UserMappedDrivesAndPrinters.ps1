@@ -73,14 +73,15 @@ foreach ($profile in $userProfiles) {
                 foreach ($printer in $mappedPrinters.PSObject.Properties) {
                     if ($printer.Name -notin @('PSPath', 'PSParentPath', 'PSChildName', 'PSProvider')) {
                         $printerDetails = $printer.Value -split ","
-                        Write-Host "    $($printer.Name)"
+                        $port = $printerDetails[0]
+                        Write-Host "    $($printer.Name) (Port: $port)"
                         $results += [pscustomobject]@{
                             UserName    = $userName
                             ProfilePath = $profilePath
                             LastUseTime = $lastUseTime
                             Type        = "Mapped Printer"
                             Identifier  = $printer.Name
-                            Details     = "Port: $($printerDetails[0]), Status: $($printerDetails[1]), MinJobs: $($printerDetails[2]), MaxJobs: $($printerDetails[3])"
+                            Details     = "Port: $port"
                         }
                         $mappedPrinterNames += $printer.Name
                     }
@@ -107,7 +108,6 @@ foreach ($profile in $userProfiles) {
             $hasLocalPrinters = $true
             foreach ($printer in $printers) {
                 if ($mappedPrinterNames -notcontains $printer.Name) {
-                    # Determine if the printer is local or network based on PortName
                     $portName = $printer.PortName
                     $printerType = if ($portName -match "^(IP|TCP|LPT|USB)_") { "Network Printer" } else { "Local Printer" }
                     Write-Host "    $($printer.Name) (Port: ${portName})"
