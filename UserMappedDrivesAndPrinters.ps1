@@ -6,10 +6,10 @@ $results = @()
 $mappedPrinterNames = @()
 
 # Define an array of additional port prefixes
-$additionalPorts = @()
+# $additionalPorts = @()
 
 # Combine the additional ports with the existing ones
-$allPorts = "^(IP|TCP|WSD-|IPP|HTTP|HTTPS|FTP|SSH|SMTP|DNS|LPR|RAW|SMB)|^\d{1,3}(\.\d{1,3}){3}$" + ($additionalPorts -join "|")
+# $allPorts = "^(IP|TCP|WSD-|IPP|HTTP|HTTPS|FTP|SSH|SMTP|DNS|LPR|RAW|SMB)|^\d{1,3}(\.\d{1,3}){3}$" + ($additionalPorts -join "|")
 
 function Get-NetworkInfo {
     param (
