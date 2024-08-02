@@ -5,6 +5,43 @@ $desktopPath = [System.IO.Path]::Combine([System.Environment]::GetFolderPath("De
 $results = @()
 $mappedPrinterNames = @()
 
+# Define an array of additional port prefixes
+$additionalPorts = @()
+
+# Combine the additional ports with the existing ones
+$allPorts = "^(IP|TCP|WSD-|IPP|HTTP|HTTPS|FTP|SSH|SMTP|DNS|LPR|RAW|SMB)|^\d{1,3}(\.\d{1,3}){3}$" + ($additionalPorts -join "|")
+
+function Get-NetworkInfo {
+    param (
+        [string]$ipAddress
+    )
+
+    $url = "https://whois.arin.net/rest/ip/$ipAddress"
+    try {
+        $response = Invoke-RestMethod -Uri $url -Method Get -Headers @{Accept = "application/json"}
+        return $response
+    } catch {
+        Write-Output "Error querying ARIN for IP: $ipAddress"
+        return $null
+    }
+}
+
+function Test-NetworkPort {
+    param (
+        [string]$portName
+    )
+
+    if ($portName -match "^(IP|TCP|WSD-|IPP_|HTTP|HTTPS|FTP|NET|SSH|SMTP|DNS|LPR|RAW|SMB)") {
+        return $true
+    } elseif ($portName -match "^\d{1,3}(\.\d{1,3}){3}$") {
+        $networkInfo = Get-NetworkInfo -ipAddress $portName
+        if ($networkInfo) {
+            return $true
+        }
+    }
+    return $false
+}
+
 # Get the list of user profiles
 $userProfiles = Get-WmiObject -Class Win32_UserProfile | Where-Object { $_.Special -eq $false }
 
@@ -16,7 +53,12 @@ foreach ($profile in $userProfiles) {
         # Get the user name, checking for Azure AD users as well
         $userName = (Get-WmiObject -Class Win32_UserAccount | Where-Object { $_.SID -eq $sid }).Name
         if (-not $userName) {
-            $userName = (Get-WmiObject -Class Win32_UserAccount -Namespace "Root\Microsoft\Identity\Providers" | Where-Object { $_.SID -eq $sid }).Name
+            if (Get-WmiObject -Namespace "Root\Microsoft\Identity\Providers" -Class __Namespace -ErrorAction SilentlyContinue) {
+                $userName = (Get-WmiObject -Class Win32_UserAccount -Namespace "Root\Microsoft\Identity\Providers" | Where-Object { $_.SID -eq $sid }).Name
+            } else {
+                Write-Host "Namespace 'Root\Microsoft\Identity\Providers' not found. Using profile path to determine user name."
+                $userName = $profilePath.Split('\')[-1]
+            }
         }
 
         $lastUseTime = $profile.LastUseTime
@@ -74,17 +116,22 @@ foreach ($profile in $userProfiles) {
             for ($i = 0; $i -lt $printerCount; $i += 2) {
                 $portName = $printerConnections.Item($i)
                 $printerName = $printerConnections.Item($i + 1)
-                $printerType = if ($portName -match "^(IP|TCP|LPT|USB)_") { "Network Printer" } else { "Local Printer" }
-                Write-Host "    $printerName (Port: $portName)"
-                $results += [pscustomobject]@{
-                    UserName    = $userName
-                    ProfilePath = $profilePath
-                    LastUseTime = $lastUseTime
-                    Type        = $printerType
-                    Identifier  = $printerName
-                    Details     = "Port: $portName"
+                $printer = (Get-Printer)[$i]
+                if ($printer) {
+                    $printerType = if (Test-NetworkPort -portName $portName) { "Network Printer" } else { "Local Printer" }
+                    Write-Host "    $printerName (Port: $portName)"
+                    $results += [pscustomobject]@{
+                        UserName    = $userName
+                        ProfilePath = $profilePath
+                        LastUseTime = $lastUseTime
+                        Type        = $printerType
+                        Identifier  = $printerName
+                        Details     = "Port: $portName"
+                    }
+                    $mappedPrinterNames += $printerName
+                } else {
+                    Write-Host "    $printerName (Port: $portName)"
                 }
-                $mappedPrinterNames += $printerName
             }
         }
 
@@ -96,23 +143,31 @@ foreach ($profile in $userProfiles) {
                 Write-Host "  Mapped Printers (Registry):"
                 foreach ($printer in $mappedPrinters.PSObject.Properties) {
                     if ($printer.Name -notin @('PSPath', 'PSParentPath', 'PSChildName', 'PSProvider') -and $mappedPrinterNames -notcontains $printer.Name) {
-                        $printerDetails = $printer.Value -split ","
-                        $portName = $printerDetails[0] # Extract the port name from the printer details
-                        $printerType = if ($portName -match "^(IP|TCP|LPT|USB)_") { "Network Printer" } else { "Local Printer" }
-                        Write-Host "    $($printer.Name) (Port: $portName)"
-                        $results += [pscustomobject]@{
-                            UserName    = $userName
-                            ProfilePath = $profilePath
-                            LastUseTime = $lastUseTime
-                            Type        = $printerType
-                            Identifier  = $printer.Name
-                            Details     = "Port: $portName"
+                        $printerObject = Get-Printer | Where-Object { $_.Name -eq $printer.Name }
+                        if ($printerObject) {
+                            $portName = $printerObject.PortName
+                            $printerType = if (Test-NetworkPort -portName $portName) { "Network Printer" } else { "Local Printer" }
+                            Write-Host "    $($printer.Name) (Port: $portName)"
+                            $results += [pscustomobject]@{
+                                UserName    = $userName
+                                ProfilePath = $profilePath
+                                LastUseTime = $lastUseTime
+                                Type        = $printerType
+                                Identifier  = $printer.Name
+                                Details     = "Port: $portName"
+                            }
+                            $mappedPrinterNames += $printer.Name
+                        } else {
+                            Write-Host "Printer $($printer.Name) not found using Get-Printer."
                         }
-                        $mappedPrinterNames += $printer.Name
                     }
                 }
             }
         }
+
+
+
+
 
         if (-not $hasMappedPrinters) {
             Write-Host "  No Mapped Printers"
@@ -134,7 +189,7 @@ foreach ($profile in $userProfiles) {
             foreach ($printer in $printers) {
                 if ($mappedPrinterNames -notcontains $printer.Name) {
                     $portName = $printer.PortName # Retrieve the port name from the printer object
-                    $printerType = if ($portName -match "^(IP|TCP|LPT|USB)_") { "Network Printer" } else { "Local Printer" }
+                    $printerType = if (Test-NetworkPort -portName $portName) { "Network Printer" } else { "Local Printer" }
                     Write-Host "    $($printer.Name) (Port: $portName)"
                     $results += [pscustomobject]@{
                         UserName    = $userName
