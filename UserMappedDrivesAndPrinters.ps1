@@ -31,7 +31,7 @@ function Test-NetworkPort {
         [string]$portName
     )
 
-    if ($portName -match "^(IP|TCP|WSD-|IPP_|HTTP|HTTPS|FTP|NET|SSH|SMTP|DNS|LPR|RAW|SMB)") {
+    if ($portName -match "^(IP|TCP|WSD|IPP|HTTP|HTTPS|FTP|NET|SSH|SMTP|DNS|LPR|RAW|SMB)") {
         return $true
     } elseif ($portName -match "^\d{1,3}(\.\d{1,3}){3}$") {
         $networkInfo = Get-NetworkInfo -ipAddress $portName
