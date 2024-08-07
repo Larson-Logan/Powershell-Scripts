@@ -197,30 +197,6 @@ foreach ($profile in $userProfiles) {
             }
         }
 
-        # Check for local printers and their ports using Get-UPPrinter
-        $upPrinters = Get-UPPrinter
-        if ($upPrinters) {
-            Write-Host "  Local Printers (Get-UPPrinter):"
-            $hasLocalPrinters = $true
-            foreach ($printer in $upPrinters) {
-                if ($mappedPrinterNames -notcontains $printer.Name) {
-                    $portName = $printer.PortName # Retrieve the port name from the printer object
-                    if ($portName) {
-                        $printerType = if (Test-NetworkPort -portName $portName) { "Network Printer" } else { "Local Printer" }
-                        Write-Host "    $($printer.Name) (Port: $portName)"
-                        $results += [pscustomobject]@{
-                            UserName    = $userName
-                            ProfilePath = $profilePath
-                            LastUseTime = $lastUseTime
-                            Type        = $printerType
-                            Identifier  = $printer.Name
-                            Details     = "Port: $portName"
-                        }
-                    }
-                }
-            }
-        }
-
         if (-not $hasLocalPrinters) {
             Write-Host "  No Local Printers"
             $results += [pscustomobject]@{
