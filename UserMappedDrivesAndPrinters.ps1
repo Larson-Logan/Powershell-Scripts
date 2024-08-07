@@ -1,5 +1,5 @@
 # Get the current user's desktop path
-$desktopPath = [System.IO.Path]::Combine([System.Environment]::GetFolderPath("Desktop"), "UserMappedDrivesAndPrinters.csv")
+$desktopPath = [System.IO.Path]::Combine([System.Environment]::GetFolderPath("Desktop"), "UserMappedDrivesAndPrinters.json")
 
 # Initialize an empty array to hold the results
 $results = @()
@@ -49,14 +49,12 @@ foreach ($profile in $userProfiles) {
     try {
         $profilePath = $profile.LocalPath
         $sid = $profile.SID
-
         # Get the user name, checking for Azure AD users as well
         $userName = (Get-WmiObject -Class Win32_UserAccount | Where-Object { $_.SID -eq $sid }).Name
         if (-not $userName) {
             if (Get-WmiObject -Namespace "Root\Microsoft\Identity\Providers" -Class __Namespace -ErrorAction SilentlyContinue) {
                 $userName = (Get-WmiObject -Class Win32_UserAccount -Namespace "Root\Microsoft\Identity\Providers" | Where-Object { $_.SID -eq $sid }).Name
             } else {
-                Write-Host "Namespace 'Root\Microsoft\Identity\Providers' not found. Using profile path to determine user name."
                 $userName = $profilePath.Split('\')[-1]
             }
         }
@@ -165,10 +163,6 @@ foreach ($profile in $userProfiles) {
             }
         }
 
-
-
-
-
         if (-not $hasMappedPrinters) {
             Write-Host "  No Mapped Printers"
             $results += [pscustomobject]@{
@@ -230,6 +224,8 @@ foreach ($profile in $userProfiles) {
 }
 
 # Export results to CSV
-$results | Export-Csv -Path $desktopPath -NoTypeInformation -Force
+$backslash = [char]0x005C
+$results | ConvertTo-Json | ForEach-Object { $_ -replace '\\\\', $backslash } | Out-File -FilePath $desktopPath -Encoding utf8 -Force
+# $results | Export-CSV -Path $desktopPath -NoTypeInformation -Force
 
 Write-Host "Results have been exported to $desktopPath"
